@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3 -u
 
 import requests
 import json
@@ -7,8 +7,9 @@ import sys
 from time import sleep
 import threading 
 import datetime
-
+from termcolor import colored
 from queue import Queue
+import signal
 
 islands = []
 
@@ -75,19 +76,20 @@ def main(argv):
 		usage()
 		exit()
 	
-
-	connect.connect(argv[1],argv[2])
+	global login, passwd
+	login = argv[1]
+	passwd = argv[2]
+	connect.connect(login,passwd)
 	
 	getInfo()
 	
-
-	print("Appuyez sur ENTRER pour arrêter le script")
-	threadRecolt = AutoRecolt()
+	global threadRecolt
 	threadRecolt.start()
+	signal.signal(signal.SIGINT, close_thread)
 	
-	r = input()
-	threadRecolt.event.set()
+	threadRecolt.join()
 	
+	print("Bye!")
 	
 def getInfo():
 	global islands
@@ -153,7 +155,21 @@ class AutoRecolt(threading.Thread):
 			print("Début de la récolte...")
 			for island in islands:
 				for farm in island.farms:
-					self.getRessources(island.getNext(), farm)
+					ok = self.getRessources(island.getNext(), farm)
+					intent = 1
+					while(not ok and intent != 4):
+						print("Nouvelle connexion dans 30min")
+						self.event.wait(30*60)
+						print("Reconnexion...")
+						connect.connect_game()
+						print("Nouvelle tentative...")
+						ok = self.getRessources(island.getNext(), farm)
+						intent += 1
+					
+					if(intent == 4):
+						print(colored("[ERROR] Fermeture de la session de récolte",'red'))
+						return
+					
 			currTime = datetime.datetime.now()
 			nextTime = currTime + datetime.timedelta(0,5*60)
 			print("Prochaine récolte à "+nextTime.strftime("%H:%M"))
@@ -165,15 +181,25 @@ class AutoRecolt(threading.Thread):
 		global islands
 		
 		data = '{"model_url":"FarmTownPlayerRelation/'+str(farm.relation)+'","action_name":"claim","arguments":{"farm_town_id":"'+str(farm.id)+'","type":"resources","option":1},"town_id":"'+str(town.id)+'","nl_init":true}'
+
 		r = connect.req.post(url, data={"json":data}, headers={"X-Requested-With":"XMLHttpRequest"})
 		resp = r.json()
 		if("success" in resp["json"]):
-			print("Ressources livrees vers "+ town.name)
+			print("Ressources livrées vers "+ town.name)
+			return True
 		else:
-			print("Erreur : "+resp["json"]["error"])
+			if('redirect' in resp["json"]):
+				print(colored("[ERROR] Erreur lors de la livraison des ressources : joueur déconnecté",'red'))
+				return False
+			print(colored("[WARNING] Erreur lors de la livraison des ressources : "+resp["json"]["error"],'yellow'))
+			return True
 			
-	
+def close_thread(sig, frame):
+	global threadRecolt
+	print("Closing thread autorecolt")
+	threadRecolt.event.set()
 
+threadRecolt = AutoRecolt()
 if __name__ == "__main__":
 	main(sys.argv)
 			
