@@ -175,6 +175,8 @@ class AutoRecolt(threading.Thread):
 			print("Prochaine récolte à "+nextTime.strftime("%H:%M"))
 			self.event.wait(5*60)
 			
+		print("Fermeture de la session de récolte")
+			
 				
 	def getRessources(self, town, farm):
 		url = "https://fr107.grepolis.com/game/frontend_bridge?action=execute&h="+connect.h
@@ -200,6 +202,7 @@ def close_thread(sig, frame):
 	threadRecolt.event.set()
 
 threadRecolt = AutoRecolt()
+
 if __name__ == "__main__":
 	main(sys.argv)
 			
