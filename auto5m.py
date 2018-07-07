@@ -8,86 +8,10 @@ from time import sleep
 import threading 
 import datetime
 from termcolor import colored
-from queue import Queue
 import signal
+from grepClasses import *
 
 islands = []
-
-"""Class Town"""
-class Town:
-	def __init__(self, name, id, position):
-		self.name = name
-		self.id = id
-		self.position = position
-		
-	def __str__(self):
-		return self.name
-		
-		
-"""Class FarmTown"""	
-class FarmTown(Town):
-	def __init__(self, name, id, position, relation):
-		Town.__init__(self, name, id, position)
-		self.relation = relation
-
-"""Class PlayerTown"""
-class PlayerTown(Town):
-	storage = 0
-	wood = 0
-	iron = 0
-	stone = 0
-	full = False
-	units = {}
-	def __init__(self, name, id, position):
-		Town.__init__(self, name, id, position)
-		
-	def __str__(self):
-		return self.name+": storage "+str(self.storage)+" iron "+str(self.iron)+" wood "+str(self.wood)+" stone "+str(self.stone)
-	
-	def __setattr__(self,name,value):
-		super().__setattr__(name, value)
-		if(name == 'storage'):
-			super().__setattr__('full', value != 0 and value == self.iron + self.wood + self.stone)
-		elif(name == 'iron'):
-			super().__setattr__('full', self.storage != 0 and self.storage == value + self.wood + self.stone)
-		elif(name == 'wood'):
-			super().__setattr__('full', self.storage != 0 and self.storage == self.iron + value + self.stone)
-		elif(name == 'stone'):
-			super().__setattr__('full', self.storage != 0 and self.storage == self.iron + self.wood + value)
-			
-		
-"""Class Island"""
-class Island:
-	def __init__(self, position):
-		self.position = position
-		self.farms = []
-		self.q = Queue()
-		self.__dict__["towns"]=[]
-		
-	def addPlayerTown(self, town):
-		self.towns += town
-		
-	def addFarmTown(self, farm):
-		self.farms += town
-		
-	def __str__(self):
-		s =  "("+str(self.position[0])+","+str(self.position[1])+") : \n\t"
-		s += " ".join(e.name for e in self.towns)
-		s += "\n\t"
-		s += " ".join(str(e) for e in self.farms)
-		return s
-
-	def getNext(self):
-		t = self.q.get_nowait()
-		self.q.put_nowait(t)
-		return t
-		
-	def __setattr__(self, name, value):
-		if name == "towns":
-			self.q.put_nowait(value[len(value)-1])
-		super().__setattr__(name, value)
-
-
 
 def usage():
 	print("Usage : "+sys.argv[0] + " login password")
@@ -118,7 +42,7 @@ def getInfo():
 	global islands
 	
 	"""Getting all player towns"""
-	towns = getTownsInfo()
+	towns = getStorageTownsInfo()
 
 	"""Getting all farm towns"""
 	farms = getFarmsInfo()
@@ -146,8 +70,8 @@ def getInfo():
 	for island in islands:
 		print(island)
 		
-"""Get usefull infos of all towns"""
-def getTownsInfo():
+"""Get storage info about towns"""
+def getStorageTownsInfo():
 	data='{"collections":{"Towns":[]},"town_id":'+connect.tid+',"nl_init":false}'
 	r = connect.req.get("https://fr107.grepolis.com/game/frontend_bridge?town_id="+connect.tid+"&action=refetch&h="+connect.h+"&json="+data,headers={"X-Requested-With":"XMLHttpRequest"})
 	j = r.json()
@@ -161,10 +85,10 @@ def getTownsInfo():
 		towns += [theTown]
 	return towns
 	
-"""Update town info"""
-def updateTownInfo():
+"""Update town storage info"""
+def updateStorageTownsInfo():
 	global islands
-	towns = getTownsInfo()
+	towns = getStorageTownsInfo()
 	for island in islands:
 		for i in range(len(island.towns)):
 			for infoTown in towns:
@@ -210,8 +134,8 @@ class AutoRecolt(threading.Thread):
 						ok = self.getRessources(nextTown, farm)
 						intent = 1
 						while(not ok and intent != 4):
-							print("Nouvelle connexion dans 30min")
-							self.event.wait(30*60)
+							print("Nouvelle connexion dans 15min")
+							self.event.wait(15*60)
 							print("Reconnexion...")
 							connect.connect_game()
 							print("Nouvelle tentative...")
@@ -223,7 +147,7 @@ class AutoRecolt(threading.Thread):
 							return
 					else:
 						print(colored('[WARNING] '+nextTown.name+' est pleine!','yellow'))
-			updateTownInfo()
+			updateStorageTownsInfo()
 			currTime = datetime.datetime.now()
 			nextTime = currTime + datetime.timedelta(0,5*60)
 			print("Prochaine récolte à "+nextTime.strftime("%H:%M"))
