@@ -32,8 +32,29 @@ class FarmTown(Town):
 
 """Class PlayerTown"""
 class PlayerTown(Town):
+	storage = 0
+	wood = 0
+	iron = 0
+	stone = 0
+	full = False
+	units = {}
 	def __init__(self, name, id, position):
 		Town.__init__(self, name, id, position)
+		
+	def __str__(self):
+		return self.name+": storage "+str(self.storage)+" iron "+str(self.iron)+" wood "+str(self.wood)+" stone "+str(self.stone)
+	
+	def __setattr__(self,name,value):
+		super().__setattr__(name, value)
+		if(name == 'storage'):
+			super().__setattr__('full', value != 0 and value == self.iron + self.wood + self.stone)
+		elif(name == 'iron'):
+			super().__setattr__('full', self.storage != 0 and self.storage == value + self.wood + self.stone)
+		elif(name == 'wood'):
+			super().__setattr__('full', self.storage != 0 and self.storage == self.iron + value + self.stone)
+		elif(name == 'stone'):
+			super().__setattr__('full', self.storage != 0 and self.storage == self.iron + self.wood + value)
+			
 		
 """Class Island"""
 class Island:
@@ -51,7 +72,7 @@ class Island:
 		
 	def __str__(self):
 		s =  "("+str(self.position[0])+","+str(self.position[1])+") : \n\t"
-		s += " ".join(str(e) for e in self.towns)
+		s += " ".join(e.name for e in self.towns)
 		s += "\n\t"
 		s += " ".join(str(e) for e in self.farms)
 		return s
@@ -65,6 +86,7 @@ class Island:
 		if name == "towns":
 			self.q.put_nowait(value[len(value)-1])
 		super().__setattr__(name, value)
+
 
 
 def usage():
@@ -91,31 +113,15 @@ def main(argv):
 	
 	print("Bye!")
 	
+"""Get all usefull info"""
 def getInfo():
 	global islands
 	
 	"""Getting all player towns"""
-	data='{"collections":{"Towns":[]},"town_id":'+connect.tid+',"nl_init":false}'
-	r = connect.req.get("https://fr107.grepolis.com/game/frontend_bridge?town_id="+connect.tid+"&action=refetch&h="+connect.h+"&json="+data,headers={"X-Requested-With":"XMLHttpRequest"})
-	j = r.json()
-	towns = []
-	for town in j["json"]["collections"]["Towns"]["data"]:
-		towns += [PlayerTown(town["d"]["name"],town["d"]["id"], (town["d"]["island_x"],town["d"]["island_y"]))]
+	towns = getTownsInfo()
 
 	"""Getting all farm towns"""
-	data = '{"types":[{"type":"easterIngredients"},{"type":"map","param":{"x":15,"y":7}},{"type":"bar"},{"type":"backbone"}],"town_id":'+connect.tid+',"nl_init":false}'
-	r = connect.req.post("https://fr107.grepolis.com/game/data?town_id="+connect.tid+"&action=get&h="+connect.h, data={"json":data}, headers={"X-Requested-With":"XMLHttpRequest"})
-	j = r.json()
-	farms = []
-	for farm in j["json"]["backbone"]["collections"][25]["data"]:
-		farm_id = farm["d"]["id"]
-		relations = j["json"]["backbone"]["collections"][26]["data"]
-		index = 0
-		while(relations[index]["d"]["farm_town_id"] != farm_id):
-			index += 1
-			
-		farms += [FarmTown(farm["d"]["name"], farm_id, (farm["d"]["island_x"],farm["d"]["island_y"]), relations[index]["d"]["id"])]
-		
+	farms = getFarmsInfo()
 		
 	"""Creating islands"""
 	for town in towns:
@@ -139,9 +145,53 @@ def getInfo():
 				
 	for island in islands:
 		print(island)
-		print(island.q.qsize())
+		
+"""Get usefull infos of all towns"""
+def getTownsInfo():
+	data='{"collections":{"Towns":[]},"town_id":'+connect.tid+',"nl_init":false}'
+	r = connect.req.get("https://fr107.grepolis.com/game/frontend_bridge?town_id="+connect.tid+"&action=refetch&h="+connect.h+"&json="+data,headers={"X-Requested-With":"XMLHttpRequest"})
+	j = r.json()
+	towns = []
+	for town in j["json"]["collections"]["Towns"]["data"]:
+		theTown = PlayerTown(town["d"]["name"],town["d"]["id"], (town["d"]["island_x"],town["d"]["island_y"]))
+		theTown.storage = town["d"]["storage"]
+		theTown.iron = town["d"]["resources"]["iron"]
+		theTown.wood = town["d"]["resources"]["wood"]
+		theTown.stone = town["d"]["resources"]["stone"]
+		towns += [theTown]
+	return towns
 	
-	
+"""Update town info"""
+def updateTownInfo():
+	global islands
+	towns = getTownsInfo()
+	for island in islands:
+		for i in range(len(island.towns)):
+			for infoTown in towns:
+				if island.towns[i].id == infoTown.id:
+					island.towns[i].storage = infoTown.storage
+					island.towns[i].wood = infoTown.wood
+					island.towns[i].iron = infoTown.iron
+					island.towns[i].stone = infoTown.stone
+					
+
+"""Get usefull infos of all farms"""
+def getFarmsInfo():
+	data = '{"types":[{"type":"easterIngredients"},{"type":"map","param":{"x":15,"y":7}},{"type":"bar"},{"type":"backbone"}],"town_id":'+connect.tid+',"nl_init":false}'
+	r = connect.req.post("https://fr107.grepolis.com/game/data?town_id="+connect.tid+"&action=get&h="+connect.h, data={"json":data}, headers={"X-Requested-With":"XMLHttpRequest"})
+	j = r.json()
+	farms = []
+	for farm in j["json"]["backbone"]["collections"][25]["data"]:
+		farm_id = farm["d"]["id"]
+		relations = j["json"]["backbone"]["collections"][26]["data"]
+		index = 0
+		while(relations[index]["d"]["farm_town_id"] != farm_id):
+			index += 1
+			
+		farms += [FarmTown(farm["d"]["name"], farm_id, (farm["d"]["island_x"],farm["d"]["island_y"]), relations[index]["d"]["id"])]
+	return farms
+		
+"""Thread that allow autorecolt"""
 class AutoRecolt(threading.Thread):
 	def __init__(self):
 		threading.Thread.__init__(self)
@@ -155,21 +205,25 @@ class AutoRecolt(threading.Thread):
 			print("Début de la récolte...")
 			for island in islands:
 				for farm in island.farms:
-					ok = self.getRessources(island.getNext(), farm)
-					intent = 1
-					while(not ok and intent != 4):
-						print("Nouvelle connexion dans 30min")
-						self.event.wait(30*60)
-						print("Reconnexion...")
-						connect.connect_game()
-						print("Nouvelle tentative...")
-						ok = self.getRessources(island.getNext(), farm)
-						intent += 1
-					
-					if(intent == 4):
-						print(colored("[ERROR] Fermeture de la session de récolte",'red'))
-						return
-					
+					nextTown = island.getNext()
+					if not nextTown.full:
+						ok = self.getRessources(nextTown, farm)
+						intent = 1
+						while(not ok and intent != 4):
+							print("Nouvelle connexion dans 30min")
+							self.event.wait(30*60)
+							print("Reconnexion...")
+							connect.connect_game()
+							print("Nouvelle tentative...")
+							ok = self.getRessources(nextTown, farm)
+							intent += 1
+						
+						if(intent == 4):
+							print(colored("[ERROR] Fermeture de la session de récolte",'red'))
+							return
+					else:
+						print(colored('[WARNING] '+nextTown.name+' est pleine!','yellow'))
+			updateTownInfo()
 			currTime = datetime.datetime.now()
 			nextTime = currTime + datetime.timedelta(0,5*60)
 			print("Prochaine récolte à "+nextTime.strftime("%H:%M"))
@@ -196,6 +250,7 @@ class AutoRecolt(threading.Thread):
 			print(colored("[WARNING] Erreur lors de la livraison des ressources : "+resp["json"]["error"],'yellow'))
 			return True
 			
+"""Close thread properly"""
 def close_thread(sig, frame):
 	global threadRecolt
 	print("Closing thread autorecolt")
