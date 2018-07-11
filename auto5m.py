@@ -97,6 +97,7 @@ def updateStorageTownsInfo():
 					island.towns[i].wood = infoTown.wood
 					island.towns[i].iron = infoTown.iron
 					island.towns[i].stone = infoTown.stone
+					print(island.towns[i])
 					
 
 """Get usefull infos of all farms"""
